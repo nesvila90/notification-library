@@ -1,78 +1,236 @@
-Perfecto. Te dejo un **README.md completo, claro y alineado con lo que normalmente pide una prueba técnica backend Java**, usando el vocabulario correcto (agnóstico, extensible, resiliencia básica, push especial, Java 21, HttpClient, etc.), **sin sobre-ingeniería** y defendible en revisión.
+# Notification Library – Java Backend Challenge
 
-Puedes copiarlo tal cual al repo.
+## 1. Purpose
 
----
+This project implements a **Java library** that allows sending notifications through **multiple channels** using *
+*multiple providers**, providing a **unified interface** for the client code.
 
-```md
-# Notifications Challenge – Java Backend (Java 21)
+The goal of the challenge is to demonstrate **software design, extensibility, and clean architecture**, not to build a
+production-ready system.
 
-## 📌 Overview
-
-This project implements a **multi-channel, multi-provider notification system** in **Java 21**, designed to be:
-
-- **Framework-agnostic**
-- **Extensible by design**
-- **Asynchronous (fire-and-forget)**
-- **Provider-independent**
-- **Aligned with official provider HTTP APIs (simulated)**
-
-The solution supports **Email, SMS and Push Notifications**, with special focus on **Push**, as required by the challenge.
-
-The goal is to demonstrate **clean architecture, separation of concerns, and practical backend design**, not to integrate real credentials or external SDKs.
+This solution complies with all requirements described in the challenge document.
 
 ---
 
-## 🧠 Design Principles
+## 2. Scope of the Library
 
-- **Separation of concerns**
-- **Open/Closed Principle** (new providers without modifying core)
-- **Canonical domain contracts**
-- **Composition over inheritance**
-- **Simple resilience (retry + observability)**
-- **No framework lock-in (no Spring, no external resilience libs)**
+The library supports the following **mandatory notification channels**:
+
+- **Email**
+- **SMS**
+- **Push Notification**
+
+Each channel can be configured to use **different providers**, and providers can be swapped **without changing client
+code**.
+
+The library:
+
+- Is **framework-agnostic**
+- Uses **Java 21**
+- Is configured **only through Java code**
+- Does **not require real external API calls**
+- Uses **mocked/simulated providers** to demonstrate behavior
 
 ---
 
-## 🏗️ Architecture Overview
+## 3. High-Level Design
 
+### 3.1 Unified Interface
+
+The library exposes a single entry point for sending notifications:
+
+```java
+interface Notifications {
+    CompletionStage<NotificationResult> send(NotificationMessage message);
+}
+````
+
+This ensures:
+
+* Client code is decoupled from channels and providers
+* New channels/providers do not affect existing clients
+
+---
+
+### 3.2 Notification Channels
+
+Each notification type is modeled explicitly:
+
+* `EmailNotification`
+* `SmsNotification`
+* `PushNotification`
+
+All notification types share a common base abstraction:
+
+```java
+interface NotificationMessage {
+    NotificationChannel channel();
+}
 ```
 
-Client
-|
-v
-Notifications API (canonical messages)
-|
-v
-NotificationEngine
-|
-+--> Channel Dispatcher (Email / SMS / Push)
-|
-+--> Provider Adapter (SendGrid, Twilio, FCM, APNs, WebPush)
-|
-+--> Transport Pipeline
-- Observability
-- Retry
-- HttpClient (Java 21)
+---
 
-```
+### 3.3 Providers
 
-### Key Layers
+Each channel can have **multiple providers**.
 
-| Layer | Responsibility |
-|------|---------------|
-| **API** | Canonical message contracts (EmailMessage, SmsMessage, PushMessage) |
-| **Core** | Dispatching, configuration, adapters registry, transport pipeline |
-| **Channels** | Channel-specific validation and routing |
-| **Providers** | Provider-specific HTTP request mapping (official-like) |
-| **Transport** | HTTP execution, retry, logging |
+Examples:
+
+* Email: SendGrid, Mailgun
+* SMS: Twilio, Nexmo
+* Push: FCM, APNS, WebPush
+
+Providers implement a common contract and are selected at runtime via configuration.
 
 ---
 
-## 📦 Multi-module Structure
+## 4. Configuration (Code-Based Only)
 
+As required by the challenge, **no YAML, properties or external configuration files** are used.
+
+All configuration is done via Java classes.
+
+Example:
+
+```java
+NotificationsConfig config = NotificationsConfig.builder()
+        .enableChannel(NotificationChannel.EMAIL, ProviderId.of("sendgrid"))
+        .enableChannel(NotificationChannel.SMS, ProviderId.of("twilio"))
+        .enableChannel(NotificationChannel.PUSH, ProviderId.of("fcm"))
+        .build();
 ```
 
+Provider-specific configuration is also provided via Java objects:
+
+```java
+SendGridConfig sendGridConfig = new SendGridConfig("api-key");
+TwilioConfig twilioConfig = new TwilioConfig("accountSid", "token");
+```
+
+---
+
+## 5. Provider Integration Strategy
+
+### 5.1 Adapter Pattern
+
+Each provider is implemented as an **adapter** that translates a canonical notification into a provider-specific
+request.
+
+```java
+interface NotificationProvider<T extends NotificationMessage> {
+    ProviderResult send(T message);
+}
+```
+
+This allows:
+
+* Adding new providers without modifying existing code
+* Keeping provider-specific logic isolated
+
+---
+
+### 5.2 Push Notifications (Special Focus)
+
+Push notifications are handled separately because they differ significantly between providers.
+
+The library models push providers explicitly:
+
+* Firebase Cloud Messaging (FCM)
+* Apple Push Notification Service (APNS)
+* Web Push
+
+Even though calls are simulated, each adapter follows the **official API structure**:
+
+* Headers
+* Payload shape
+* Required identifiers (tokens, topics, etc.)
+
+---
+
+## 6. Execution Model
+
+### 6.1 Asynchronous Execution
+
+Notification sending is **asynchronous**, returning `CompletionStage`.
+
+* Fire-and-forget behavior
+* No blocking calls in the client
+* Suitable for batch processing
+
+---
+
+### 6.2 Batch Support
+
+The library supports sending multiple notifications in batch:
+
+```java
+CompletionStage<List<NotificationResult>> sendBatch(List<NotificationMessage> messages);
+```
+
+---
+
+## 7. Error Handling
+
+The library distinguishes between:
+
+### 7.1 Validation Errors
+
+* Invalid email address
+* Invalid phone number
+* Missing required fields
+
+These errors are detected **before sending**.
+
+### 7.2 Delivery Errors
+
+* Provider failures
+* Network errors (simulated)
+
+Errors are returned in a structured `NotificationResult` object.
+
+---
+
+## 8. Retry Strategy
+
+A simple retry mechanism is implemented for **transient errors**.
+
+* Retries apply only to provider delivery failures
+* Validation errors are not retried
+* Retry policy is configurable via code
+
+---
+
+## 9. Testing Strategy
+
+As required, the project includes **unit tests** using mocks and simulations.
+
+* No real HTTP calls
+* Providers use mock transports
+* Deterministic and fast tests
+
+Tests can be executed with:
+
+```bash
+mvn test
+```
+
+---
+
+## 10. Mocked Providers
+
+To comply with the challenge constraints:
+
+* All provider integrations are **simulated**
+* No real credentials are required
+* Provider adapters still model real-world request/response behavior
+
+This demonstrates understanding of provider APIs without external dependencies.
+
+---
+
+## 11. Project Structure
+
+```
 notifications-parent
 ├── notifications-api
 ├── notifications-core
@@ -85,219 +243,147 @@ notifications-parent
 ├── notifications-provider-apns
 ├── notifications-provider-webpush
 └── notifications-examples
-
-````
-
----
-
-## ✉️ Supported Channels & Providers
-
-### Email
-- SendGrid (HTTP API v3 – simulated)
-
-### SMS
-- Twilio (REST API – simulated)
-
-### Push (Special Focus)
-- **Firebase Cloud Messaging (FCM v1)**
-- **Apple Push Notification Service (APNs HTTP/2)**
-- **Web Push (VAPID)**
-
-Each provider follows the **official HTTP request shape**, including:
-- Endpoints
-- Headers
-- Payload structure
-- Idempotency keys
-
-> ⚠️ No real credentials or live calls are used. Providers are simulated via `MockTransport`.
+```
 
 ---
 
-## 🔔 Canonical Notification Model
+## 12. Running the Example
 
-All channels use canonical domain models:
+### 12.1. Configuration (Java Only)
 
-```java
-sealed interface NotificationMessage
-  permits EmailMessage, SmsMessage, PushMessage
-````
+``` java
+NotificationsConfig config = NotificationsConfig.builder()
+.enable(NotificationChannel.EMAIL, ProviderId.of("sendgrid"))
+.enable(NotificationChannel.SMS, ProviderId.of("twilio"))
+.enable(NotificationChannel.PUSH, ProviderId.of("fcm"))
+.providerConfig(SendGridConfig.demo())
+.providerConfig(TwilioConfig.demo())
+.providerConfig(FcmConfig.demo())
+.build();
+```
 
-This ensures:
+## 12.2. Example Implementation (REAL CODE)
 
-* No provider-specific logic leaks into business code
-* Channels remain stable even if providers change
+This is the exact way the library is used in notifications-examples.
 
----
+``` java
+public final class DemoMain {
 
-## 🔌 Provider Adapters
+    public static void main(String[] args) {
 
-Providers are implemented as **Adapters**, not services.
-
-```java
-interface ProviderAdapter<T extends NotificationMessage> {
-  ProviderId id();
-  NotificationChannel channel();
-  ProviderRequest toRequest(T message, ProviderConfig config);
+        Transport transport =
+            TransportPipeline.build(
+                new MockTransport()
+            );
+    
+        NotificationsConfig config =
+            NotificationsConfig.builder()
+                .enable(NotificationChannel.EMAIL, ProviderId.of("sendgrid"))
+                .enable(NotificationChannel.SMS, ProviderId.of("twilio"))
+                .enable(NotificationChannel.PUSH, ProviderId.of("fcm"))
+                .providerConfig(SendGridConfig.demo())
+                .providerConfig(TwilioConfig.demo())
+                .providerConfig(FcmConfig.demo())
+                .build();
+    
+        ProviderAdapters adapters =
+            new ProviderAdapters()
+                .register(new SendGridEmailAdapter())
+                .register(new TwilioSmsAdapter())
+                .register(new FcmPushAdapter())
+                .register(new ApnsPushAdapter())
+                .register(new WebPushAdapter());
+    
+        Notifications notifications =
+            new NotificationEngine(
+                config,
+                adapters,
+                transport,
+                Map.of(
+                    NotificationChannel.EMAIL, new EmailDispatcher(),
+                    NotificationChannel.SMS, new SmsDispatcher(),
+                    NotificationChannel.PUSH, new PushDispatcher()
+                )
+            );
+    
+        NotificationMessage email =
+            EmailBuilder.create()
+                .to("user@test.com")
+                .subject("Test Email")
+                .body("Email body")
+                .build();
+    
+        NotificationMessage sms =
+            SmsBuilder.create()
+                .phoneE164("+573118486266")
+                .body("SMS body")
+                .build();
+    
+        NotificationMessage push =
+            PushBuilder.create()
+                .deviceToken("device-token")
+                .title("Push title")
+                .body("Push body")
+                .build();
+    
+        notifications.sendAsync(email);
+        notifications.sendAsync(sms);
+        notifications.sendAsync(push);
+    }
 }
 ```
 
-Responsibilities:
-
-* Translate canonical message → provider HTTP request
-* Apply provider-specific headers and payloads
-* Follow official API documentation
-
-Adding a new provider only requires:
-
-1. A `ProviderConfig`
-2. A `ProviderAdapter`
-
-No changes to core or channels.
-
----
-
-## 🚚 Transport Pipeline
-
-The HTTP execution is handled by a **decorated transport pipeline**:
-
-```
-ObservabilityTransport
-  → RetryTransport
-      → JavaHttpClientTransport
-```
-
-### Transport Responsibilities
-
-| Component                 | Responsibility                                  |
-| ------------------------- | ----------------------------------------------- |
-| `JavaHttpClientTransport` | Executes HTTP using `java.net.http.HttpClient`  |
-| `RetryTransport`          | Retries transient failures (timeouts, 5xx, 429) |
-| `ObservabilityTransport`  | Logs requests, responses and latency            |
-
-Retry rules:
-
-* Retries on:
-
-  * HTTP `408`, `429`, `5xx`
-  * Network timeouts and IO errors
-* No retries on:
-
-  * Validation errors
-  * Authorization errors
-  * Client `4xx`
-
----
-
-## 🚀 Async & Fire-and-Forget
-
-* All operations return `CompletionStage`
-* Batch sending is supported
-* No blocking calls in dispatchers
-* Fire-and-forget semantics with delivery receipts
-
----
-
-## 🧪 Mock Transport
-
-To avoid external dependencies, the project includes:
-
-```java
-MockTransport
-```
-
-It simulates:
-
-* Successful responses
-* Transient failures (503)
-* Validation errors
-* Timeouts
-
-This allows:
-
-* Deterministic testing
-* Offline execution
-* No credentials required
-
----
-
-## ▶️ Running the Project
-
-### Build & Test
+A simple demo is included to demonstrate usage.
 
 ```bash
-mvn clean test
+mvn -DskipTests install
+mvn -pl notifications-examples exec:java
 ```
 
-### Run Demo
+The example sends:
 
-```bash
-mvn -pl notifications-examples exec:java \
-  -Dexec.mainClass=com.agora.notifications.examples.DemoMain
-```
-
-The demo sends:
-
-* One Email
+* One email
 * One SMS
-* One Push
-* A batch of mixed notifications
+* One push notification
 
 ---
 
-## 🐳 Docker Support
+## 13. Docker (Optional)
 
-A multi-stage Dockerfile is provided.
-
-### Build
+A Dockerfile is provided to run the example without local Java installation.
 
 ```bash
 docker build -t notifications-challenge .
-```
-
-### Run
-
-```bash
 docker run --rm notifications-challenge
 ```
 
-The container runs the demo using Java 21 and prints delivery receipts.
+---
+
+## 14. Security Considerations
+
+* API keys and credentials are not hardcoded
+* Provider configs are injected programmatically
+* In real usage, secrets should come from environment variables or secret managers
 
 ---
 
-## 🔍 Why This Design
+## 15. Limitations and Trade-offs
 
-* Avoids over-engineering
-* Easy to reason about
-* Easy to extend
-* Matches real-world backend constraints
-* Uses **Java 21 standard APIs**
-* Explicitly models Push complexity
+* No real provider integrations (by design)
+* No persistence layer
+* No delivery callbacks
 
----
-
-## 📎 Notes
-
-* No frameworks (Spring, Quarkus, Micronaut) were used intentionally
-* No external resilience libraries (Resilience4j, Hystrix)
-* Focus is on **architecture clarity and correctness**
-* Code is optimized for **reviewability**, not maximal features
+These were intentionally omitted to focus on architecture and design, as requested.
 
 ---
 
-## ✅ Summary
+## 16. Use of AI Tools
 
-This solution demonstrates:
+AI assistance was used to:
 
-* Clean multi-module Java design
-* Proper abstraction boundaries
-* Practical use of Java 21 HttpClient
-* Extensible notification architecture
-* Correct handling of Push notifications
+* Review design consistency
+* Refactor code structure
+* Improve documentation clarity
 
-It is suitable as:
+All architectural decisions and final implementation choices were made manually.
 
-* A technical challenge submission
-* A reference architecture
-* A foundation for further extension
-
-```
